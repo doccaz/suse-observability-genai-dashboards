@@ -1,0 +1,318 @@
+name: GPU Saturation vs LLM Request Load
+description: Correlates NVIDIA DCGM GPU metrics against GenAI request volume and latency, to spot when the GPU worker is the bottleneck.
+scope: publicDashboard
+dashboard:
+  metadata:
+    project: '{"saveVariables":false}'
+  spec:
+    layouts:
+    - kind: Grid
+      spec:
+        items:
+        - x: 0
+          "y": 0
+          width: 8
+          height: 2
+          content:
+            $ref: '#/spec/panels/stat_gpu_util'
+        - x: 8
+          "y": 0
+          width: 8
+          height: 2
+          content:
+            $ref: '#/spec/panels/stat_vram_used'
+        - x: 16
+          "y": 0
+          width: 8
+          height: 2
+          content:
+            $ref: '#/spec/panels/stat_request_rate'
+        - x: 0
+          "y": 2
+          width: 12
+          height: 4
+          content:
+            $ref: '#/spec/panels/gpu_util_over_time'
+        - x: 12
+          "y": 2
+          width: 12
+          height: 4
+          content:
+            $ref: '#/spec/panels/request_rate_over_time'
+        - x: 0
+          "y": 6
+          width: 12
+          height: 4
+          content:
+            $ref: '#/spec/panels/p95_duration_over_time'
+        - x: 12
+          "y": 6
+          width: 12
+          height: 4
+          content:
+            $ref: '#/spec/panels/gpu_memory_over_time'
+        - x: 0
+          "y": 10
+          width: 24
+          height: 4
+          content:
+            $ref: '#/spec/panels/gpu_power_over_time'
+    panels:
+      stat_gpu_util:
+        spec:
+          display:
+            name: GPU Utilization (now)
+            description: Current GPU compute utilization on the selected cluster's GPU worker node(s).
+          plugin:
+            kind: GaugeChart
+            spec:
+              calculation: last
+              format:
+                decimalPlaces: 0
+                unit: percentunit
+              max: 1
+              thresholds:
+                defaultColor: '#33A02C'
+                mode: absolute
+                steps:
+                - color: '#FF7F00'
+                  value: 0.7
+                - color: '#E31A1C'
+                  value: 0.9
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  alias: GPU utilization
+                  query: avg(DCGM_FI_DEV_GPU_UTIL{k8s_cluster_name="${cluster}"}) / 100
+      stat_vram_used:
+        spec:
+          display:
+            name: VRAM Used (now)
+            description: Current GPU framebuffer memory in use, in GiB.
+          plugin:
+            kind: StatChart
+            spec:
+              calculation: last
+              format:
+                decimalPlaces: 1
+                unit: short
+              sparkline: true
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  alias: VRAM used (GiB)
+                  query: sum(DCGM_FI_DEV_FB_USED{k8s_cluster_name="${cluster}"}) / 1024
+      stat_request_rate:
+        spec:
+          display:
+            name: LLM Request Rate (now)
+            description: Current chat-completion request rate across all models.
+          plugin:
+            kind: StatChart
+            spec:
+              calculation: last
+              format:
+                decimalPlaces: 3
+                unit: short
+              sparkline: true
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  alias: Requests/s
+                  query: sum(rate(gen_ai_client_operation_duration_seconds_count{k8s_cluster_name="${cluster}"}[${__rate_interval}]))
+      gpu_util_over_time:
+        spec:
+          display:
+            name: GPU Compute Utilization
+            description: Overall SM utilization vs. tensor-core pipe activity — the latter is the more honest signal for whether LLM inference is actually saturating the GPU.
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+                show: true
+                values: []
+              thresholds:
+                mode: absolute
+                steps: []
+              visual:
+                connectNulls: false
+              yAxis:
+                format:
+                  decimalPlaces: 0
+                  unit: percent
+                show: true
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  alias: GPU util %
+                  query: avg(DCGM_FI_DEV_GPU_UTIL{k8s_cluster_name="${cluster}"})
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  alias: Tensor core active %
+                  query: avg(DCGM_FI_PROF_PIPE_TENSOR_ACTIVE{k8s_cluster_name="${cluster}"}) * 100
+      request_rate_over_time:
+        spec:
+          display:
+            name: LLM Request Rate
+            description: Chat completions per second, all models combined. Compare spikes here against the GPU Compute Utilization panel to the left.
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+                show: true
+                values: []
+              thresholds:
+                mode: absolute
+                steps: []
+              visual:
+                connectNulls: false
+              yAxis:
+                format:
+                  decimalPlaces: 3
+                  unit: short
+                show: true
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  alias: Requests/s
+                  query: sum(rate(gen_ai_client_operation_duration_seconds_count{k8s_cluster_name="${cluster}"}[${__rate_interval}]))
+      p95_duration_over_time:
+        spec:
+          display:
+            name: P95 Response Time (all models)
+            description: If this climbs while GPU Compute Utilization is pinned near 100%, the GPU is the bottleneck, not the model or network.
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+                show: true
+                values: []
+              thresholds:
+                mode: absolute
+                steps: []
+              visual:
+                connectNulls: false
+              yAxis:
+                format:
+                  decimalPlaces: 1
+                  unit: seconds
+                show: true
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  alias: P95 duration
+                  query: histogram_quantile(0.95, sum by (le)(rate(gen_ai_client_operation_duration_seconds_bucket{k8s_cluster_name="${cluster}"}[${__rate_interval}])))
+      gpu_memory_over_time:
+        spec:
+          display:
+            name: GPU Memory (VRAM)
+            description: Used vs. free framebuffer memory on the GPU. Sustained near-zero free memory limits how many models can stay loaded concurrently.
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+                show: true
+                values: []
+              thresholds:
+                mode: absolute
+                steps: []
+              visual:
+                connectNulls: false
+              yAxis:
+                format:
+                  decimalPlaces: 1
+                  unit: short
+                show: true
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  alias: Used (GiB)
+                  query: sum(DCGM_FI_DEV_FB_USED{k8s_cluster_name="${cluster}"}) / 1024
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  alias: Free (GiB)
+                  query: sum(DCGM_FI_DEV_FB_FREE{k8s_cluster_name="${cluster}"}) / 1024
+      gpu_power_over_time:
+        spec:
+          display:
+            name: GPU Power Draw
+            description: Watts drawn by the GPU — a proxy for sustained load, useful for capacity/cooling planning independent of the utilization percentage.
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+                show: true
+                values: []
+              thresholds:
+                mode: absolute
+                steps: []
+              visual:
+                connectNulls: false
+              yAxis:
+                format:
+                  decimalPlaces: 0
+                  unit: short
+                show: true
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  alias: Power draw (W)
+                  query: avg(DCGM_FI_DEV_POWER_USAGE{k8s_cluster_name="${cluster}"})
+    variables:
+    - perseslistvariable:
+        kind: ListVariable
+        spec:
+          name: cluster
+          display:
+            name: Cluster
+            description: Kubernetes cluster running the GPU worker node(s).
+          allowAllValue: false
+          allowMultiple: false
+          sort: alphabetical-asc
+          plugin:
+            kind: MetricLabelValues
+            spec:
+              labelName: k8s_cluster_name
+              matchers:
+              - DCGM_FI_DEV_GPU_UTIL
+      persestextvariable: null

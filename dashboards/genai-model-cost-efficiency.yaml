@@ -1,0 +1,259 @@
+name: GenAI Model Cost & Efficiency
+description: Cost, token usage and latency broken down by model, sourced from the OpenWebUI Pipelines GenAI filter.
+scope: publicDashboard
+dashboard:
+  metadata:
+    project: '{"saveVariables":false}'
+  spec:
+    layouts:
+    - kind: Grid
+      spec:
+        items:
+        - x: 0
+          "y": 0
+          width: 8
+          height: 2
+          content:
+            $ref: '#/spec/panels/stat_total_cost'
+        - x: 8
+          "y": 0
+          width: 8
+          height: 2
+          content:
+            $ref: '#/spec/panels/stat_total_requests'
+        - x: 16
+          "y": 0
+          width: 8
+          height: 2
+          content:
+            $ref: '#/spec/panels/stat_avg_cost_req'
+        - x: 0
+          "y": 2
+          width: 12
+          height: 4
+          content:
+            $ref: '#/spec/panels/cost_by_model'
+        - x: 12
+          "y": 2
+          width: 12
+          height: 4
+          content:
+            $ref: '#/spec/panels/p95_duration_by_model'
+        - x: 0
+          "y": 6
+          width: 12
+          height: 4
+          content:
+            $ref: '#/spec/panels/tokens_by_model'
+        - x: 12
+          "y": 6
+          width: 12
+          height: 4
+          content:
+            $ref: '#/spec/panels/cost_per_1k_tokens'
+    panels:
+      stat_total_cost:
+        spec:
+          display:
+            name: Total Cost (24h)
+            description: Sum of gen_ai.usage.cost recorded by the Pipelines filter over the last 24 hours.
+          plugin:
+            kind: StatChart
+            spec:
+              calculation: last
+              format:
+                decimalPlaces: 4
+                unit: short
+              sparkline: true
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  alias: Total cost
+                  query: sum(increase(gen_ai_client_operation_cost_USD_sum{k8s_cluster_name="${cluster}"}[24h]))
+      stat_total_requests:
+        spec:
+          display:
+            name: Total Requests (24h)
+            description: Count of GenAI chat completions across all models over the last 24 hours.
+          plugin:
+            kind: StatChart
+            spec:
+              calculation: last
+              format:
+                decimalPlaces: 0
+                unit: short
+              sparkline: true
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  alias: Total requests
+                  query: sum(increase(gen_ai_client_operation_duration_seconds_count{k8s_cluster_name="${cluster}"}[24h]))
+      stat_avg_cost_req:
+        spec:
+          display:
+            name: Avg Cost / Request (24h)
+            description: Blended average cost per chat completion across all models over the last 24 hours.
+          plugin:
+            kind: StatChart
+            spec:
+              calculation: last
+              format:
+                decimalPlaces: 5
+                unit: short
+              sparkline: true
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  alias: Avg cost / request
+                  query: sum(increase(gen_ai_client_operation_cost_USD_sum{k8s_cluster_name="${cluster}"}[24h])) / sum(increase(gen_ai_client_operation_duration_seconds_count{k8s_cluster_name="${cluster}"}[24h]))
+      cost_by_model:
+        spec:
+          display:
+            name: Cost by Model
+            description: GenAI cost accrued per model over time, per the pricing.json rates the Pipelines filter uses.
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+                show: true
+                values: []
+              thresholds:
+                mode: absolute
+                steps: []
+              visual:
+                connectNulls: false
+              yAxis:
+                format:
+                  decimalPlaces: 4
+                  unit: short
+                show: true
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  alias: ${gen_ai_request_model}
+                  query: sum by (gen_ai_request_model)(increase(gen_ai_client_operation_cost_USD_sum{k8s_cluster_name="${cluster}"}[${__rate_interval}]))
+      p95_duration_by_model:
+        spec:
+          display:
+            name: P95 Response Time by Model
+            description: 95th-percentile chat completion duration per model.
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+                show: true
+                values: []
+              thresholds:
+                mode: absolute
+                steps: []
+              visual:
+                connectNulls: false
+              yAxis:
+                format:
+                  decimalPlaces: 1
+                  unit: seconds
+                show: true
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  alias: ${gen_ai_request_model}
+                  query: histogram_quantile(0.95, sum by (le, gen_ai_request_model)(rate(gen_ai_client_operation_duration_seconds_bucket{k8s_cluster_name="${cluster}"}[${__rate_interval}])))
+      tokens_by_model:
+        spec:
+          display:
+            name: Avg Tokens per Request by Model
+            description: Average input vs output tokens per chat completion, split by model.
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+                show: true
+                values: []
+              thresholds:
+                mode: absolute
+                steps: []
+              visual:
+                connectNulls: false
+              yAxis:
+                format:
+                  decimalPlaces: 0
+                  unit: short
+                show: true
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  alias: ${gen_ai_request_model} (${gen_ai_token_type})
+                  query: sum by (gen_ai_request_model, gen_ai_token_type)(rate(gen_ai_client_token_usage_sum{k8s_cluster_name="${cluster}"}[${__rate_interval}])) / sum by (gen_ai_request_model, gen_ai_token_type)(rate(gen_ai_client_token_usage_count{k8s_cluster_name="${cluster}"}[${__rate_interval}]))
+      cost_per_1k_tokens:
+        spec:
+          display:
+            name: Cost per 1K Tokens by Model
+            description: Normalized cost efficiency per model — cost accrued divided by tokens processed, per 1000 tokens. Lets you compare model pricing independent of how much each model is actually used.
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+                show: true
+                values: []
+              thresholds:
+                mode: absolute
+                steps: []
+              visual:
+                connectNulls: false
+              yAxis:
+                format:
+                  decimalPlaces: 4
+                  unit: short
+                show: true
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  alias: ${gen_ai_request_model}
+                  query: (sum by (gen_ai_request_model)(increase(gen_ai_client_operation_cost_USD_sum{k8s_cluster_name="${cluster}"}[${__rate_interval}]))) / (sum by (gen_ai_request_model)(increase(gen_ai_client_token_usage_sum{k8s_cluster_name="${cluster}"}[${__rate_interval}])) / 1000)
+    variables:
+    - perseslistvariable:
+        kind: ListVariable
+        spec:
+          name: cluster
+          display:
+            name: Cluster
+            description: Kubernetes cluster running the SUSE AI workloads.
+          allowAllValue: false
+          allowMultiple: false
+          sort: alphabetical-asc
+          plugin:
+            kind: MetricLabelValues
+            spec:
+              labelName: k8s_cluster_name
+              matchers:
+              - gen_ai_client_operation_duration_seconds_count
+      persestextvariable: null
