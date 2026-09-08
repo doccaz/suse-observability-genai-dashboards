@@ -1,0 +1,43 @@
+# Default values for suse-observability-genai-dashboards.
+
+suseObservability:
+  # -- URL of the SUSE Observability instance, e.g. https://observability.example.com (required)
+  url: ""
+  # -- Reference to an existing Secret holding an admin-scoped SUSE Observability *service* token
+  # (create one with `sts service-token create --name <name> --roles stackstate-admin`; a personal
+  # API token from the UI works too, but service tokens are meant for exactly this kind of automation).
+  # The chart never accepts a plaintext token via values.yaml.
+  existingSecret:
+    # -- Name of the existing Secret (required)
+    name: ""
+    # -- Key within the Secret whose value is the service token
+    key: serviceToken
+  # -- Skip TLS certificate verification when talking to suseObservability.url (self-signed certs)
+  insecureSkipVerify: false
+
+dashboards:
+  costEfficiency:
+    enabled: true
+  gpuSaturation:
+    enabled: true
+
+# -- Delete the tracked dashboards from SUSE Observability when the release is uninstalled.
+# Off by default: dashboards usually should survive a `helm uninstall`.
+cleanupOnUninstall: false
+
+image:
+  repository: alpine/k8s
+  tag: "1.30.4"
+  pullPolicy: IfNotPresent
+
+stsCliInstallUrl: https://dl.stackstate.com/stackstate-cli/install.sh
+
+job:
+  backoffLimit: 2
+  activeDeadlineSeconds: 300
+  resources: {}
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}

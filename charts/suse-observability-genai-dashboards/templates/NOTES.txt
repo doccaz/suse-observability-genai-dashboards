@@ -1,0 +1,17 @@
+SUSE Observability GenAI dashboards have been applied.
+
+A Job named "{{ .Release.Name }}-genai-dashboards-apply-{{ .Release.Revision }}" ran the
+`sts dashboard apply` step. Check its logs if a dashboard doesn't show up:
+
+  kubectl logs -n {{ .Release.Namespace }} job/{{ .Release.Name }}-genai-dashboards-apply-{{ .Release.Revision }}
+
+Open SUSE Observability's UI -> Dashboards, and use the "Cluster" picker at the top of each
+dashboard to select the cluster running your SUSE AI workloads.
+
+Assigned dashboard ids are tracked in configmap/{{ include "genai-dashboards.idConfigMapName" . }}
+so future `helm upgrade` runs update these dashboards in place instead of duplicating them.
+{{- if not .Values.cleanupOnUninstall }}
+
+Note: dashboards are NOT deleted from SUSE Observability on `helm uninstall` by default.
+Set `cleanupOnUninstall: true` if you want them removed automatically.
+{{- end }}

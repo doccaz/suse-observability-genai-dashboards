@@ -1,0 +1,70 @@
+{{- if .Values.cleanupOnUninstall }}
+{{- include "genai-dashboards.validate" . -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-genai-dashboards-cleanup
+  labels:
+    {{- include "genai-dashboards.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-delete
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: {{ .Values.job.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.job.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "genai-dashboards.labels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "genai-dashboards.serviceAccountName" . }}
+      containers:
+        - name: cleanup-dashboards
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: STS_CLI_URL
+              value: {{ .Values.suseObservability.url | quote }}
+            - name: STS_CLI_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.suseObservability.existingSecret.name }}
+                  key: {{ .Values.suseObservability.existingSecret.key }}
+            {{- if .Values.suseObservability.insecureSkipVerify }}
+            - name: STS_SKIP_SSL
+              value: "true"
+            {{- end }}
+            - name: STS_CLI_INSTALL_URL
+              value: {{ .Values.stsCliInstallUrl | quote }}
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: CM_NAME
+              value: {{ include "genai-dashboards.idConfigMapName" . | quote }}
+          resources:
+            {{- toYaml .Values.job.resources | nindent 12 }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+
+              command -v jq >/dev/null 2>&1 || apk add --no-cache jq >/dev/null
+              command -v sts >/dev/null 2>&1 || {
+                curl -fsSL "$STS_CLI_INSTALL_URL" | sh
+              }
+
+              ids="$(kubectl get configmap "$CM_NAME" -n "$NAMESPACE" -o json 2>/dev/null | jq -r '.data // {} | .[]')"
+              if [ -z "$ids" ]; then
+                echo "No tracked dashboard ids found in configmap/$CM_NAME, nothing to delete."
+                exit 0
+              fi
+              status=0
+              for id in $ids; do
+                echo "Deleting dashboard id $id"
+                sts dashboard delete --id "$id" || status=1
+              done
+              exit "$status"
+{{- end }}

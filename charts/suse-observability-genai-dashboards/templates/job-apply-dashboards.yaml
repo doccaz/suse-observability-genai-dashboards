@@ -1,0 +1,103 @@
+{{- include "genai-dashboards.validate" . -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-genai-dashboards-apply-{{ .Release.Revision }}
+  labels:
+    {{- include "genai-dashboards.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: {{ .Values.job.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.job.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "genai-dashboards.labels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "genai-dashboards.serviceAccountName" . }}
+      containers:
+        - name: apply-dashboards
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: STS_CLI_URL
+              value: {{ .Values.suseObservability.url | quote }}
+            - name: STS_CLI_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.suseObservability.existingSecret.name }}
+                  key: {{ .Values.suseObservability.existingSecret.key }}
+            {{- if .Values.suseObservability.insecureSkipVerify }}
+            - name: STS_SKIP_SSL
+              value: "true"
+            {{- end }}
+            - name: STS_CLI_INSTALL_URL
+              value: {{ .Values.stsCliInstallUrl | quote }}
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: CM_NAME
+              value: {{ include "genai-dashboards.idConfigMapName" . | quote }}
+          volumeMounts:
+            - name: dashboards
+              mountPath: /dashboards
+              readOnly: true
+          resources:
+            {{- toYaml .Values.job.resources | nindent 12 }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+
+              command -v jq >/dev/null 2>&1 || apk add --no-cache jq >/dev/null
+              command -v sts >/dev/null 2>&1 || {
+                curl -fsSL "$STS_CLI_INSTALL_URL" | sh
+              }
+
+              mkdir -p /tmp/dashboards
+              apply_one() {
+                src="$1"
+                key="$(basename "$src" .yaml)"
+                work="/tmp/dashboards/$key.yaml"
+                cp "$src" "$work"
+
+                dash_name="$(grep -m1 '^name:' "$work" | sed 's/^name: *//')"
+
+                existing_id="$(kubectl get configmap "$CM_NAME" -n "$NAMESPACE" -o json 2>/dev/null | jq -r --arg k "$key" '.data[$k] // empty')"
+                if [ -n "$existing_id" ]; then
+                  echo "Updating existing dashboard '$dash_name' (id=$existing_id)"
+                  sed -i "1a id: $existing_id" "$work"
+                else
+                  echo "Creating new dashboard '$dash_name'"
+                fi
+
+                sts dashboard apply -f "$work" >/tmp/apply-output.txt 2>&1 || {
+                  cat /tmp/apply-output.txt
+                  return 1
+                }
+                cat /tmp/apply-output.txt
+
+                new_id="$(sts dashboard list -o json 2>/dev/null | jq -r --arg name "$dash_name" '[.. | objects | select(.name? == $name) | .id?] | map(select(. != null)) | first // empty')"
+                if [ -n "$new_id" ]; then
+                  kubectl patch configmap "$CM_NAME" -n "$NAMESPACE" --type merge -p "{\"data\":{\"$key\":\"$new_id\"}}"
+                  echo "Tracked dashboard '$dash_name' as id $new_id in configmap/$CM_NAME"
+                else
+                  echo "Warning: could not resolve the id sts assigned to '$dash_name' via 'sts dashboard list' - it will be re-applied without an id (and likely duplicated) on the next helm upgrade." >&2
+                fi
+              }
+
+              status=0
+              for f in /dashboards/*.yaml; do
+                [ -e "$f" ] || continue
+                apply_one "$f" || status=1
+              done
+              exit "$status"
+      volumes:
+        - name: dashboards
+          configMap:
+            name: {{ .Release.Name }}-genai-dashboards-files

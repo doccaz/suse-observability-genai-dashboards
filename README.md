@@ -2,10 +2,30 @@
 
 Two ready-to-apply [SUSE Observability](https://www.suse.com/products/suse-observability/) dashboards for anyone running the SUSE AI stack (Ollama/vLLM + OpenWebUI, instrumented via the [SUSE AI Observability Extension](https://github.com/SUSE/suse-ai-observability-extension)):
 
-- **[`genai-model-cost-efficiency.yaml`](dashboards/genai-model-cost-efficiency.yaml)** — cost, token usage, and latency broken down by model. Answers "which model is expensive," "which model is slow," and "which model is truncating responses."
-- **[`gpu-saturation-vs-llm-load.yaml`](dashboards/gpu-saturation-vs-llm-load.yaml)** — NVIDIA DCGM GPU metrics correlated against GenAI request rate and latency. Answers "is the GPU actually the bottleneck, or is it something else."
+- **[`genai-model-cost-efficiency.yaml`](charts/suse-observability-genai-dashboards/dashboards/genai-model-cost-efficiency.yaml)** — cost, token usage, and latency broken down by model. Answers "which model is expensive," "which model is slow," and "which model is truncating responses."
+- **[`gpu-saturation-vs-llm-load.yaml`](charts/suse-observability-genai-dashboards/dashboards/gpu-saturation-vs-llm-load.yaml)** — NVIDIA DCGM GPU metrics correlated against GenAI request rate and latency. Answers "is the GPU actually the bottleneck, or is it something else."
 
 Both are written as plain YAML and applied via the `sts` CLI — no manual panel-clicking required. This repo doubles as a tutorial: if you've never built a SUSE Observability dashboard outside the UI before, read on.
+
+## Install via Helm (recommended)
+
+A Helm chart wraps the `sts dashboard apply` steps below into a hook Job, and tracks the dashboard ids SUSE Observability assigns so `helm upgrade` updates dashboards in place instead of duplicating them:
+
+```bash
+kubectl create secret generic suse-observability-token \
+  --from-literal=serviceToken=<your-admin-scoped-service-token>
+
+helm repo add suse-observability-genai-dashboards https://doccaz.github.io/suse-observability-genai-dashboards/
+helm repo update
+
+helm install genai-dashboards suse-observability-genai-dashboards/suse-observability-genai-dashboards \
+  --set suseObservability.url=https://<your-suse-observability-host> \
+  --set suseObservability.existingSecret.name=suse-observability-token
+```
+
+See [`charts/suse-observability-genai-dashboards/README.md`](charts/suse-observability-genai-dashboards/README.md) for the full values reference, uninstall behavior, and limitations.
+
+The rest of this README covers the manual `sts` CLI path the chart automates — useful if you don't use Helm, or want to understand/customize the dashboard schema.
 
 ## Who this is for
 
@@ -21,8 +41,8 @@ Anyone who already has SUSE Observability running and ingesting GenAI telemetry 
 2. Authenticate with an **admin-scoped** credential — see [Authentication](#authentication) below, this is the part that trips people up.
 3. Apply both dashboards:
    ```bash
-   sts dashboard apply --context admin -f dashboards/genai-model-cost-efficiency.yaml
-   sts dashboard apply --context admin -f dashboards/gpu-saturation-vs-llm-load.yaml
+   sts dashboard apply --context admin -f charts/suse-observability-genai-dashboards/dashboards/genai-model-cost-efficiency.yaml
+   sts dashboard apply --context admin -f charts/suse-observability-genai-dashboards/dashboards/gpu-saturation-vs-llm-load.yaml
    ```
 4. Open SUSE Observability's UI → *Dashboards*. Each dashboard has a **Cluster** picker at the top — select the cluster your SUSE AI workloads run in.
 
@@ -156,7 +176,7 @@ At the time this repo was built, the confirmed metric/label set was:
 Both dashboard files are ordinary YAML — copy a panel block, change its `query`/`alias`/`display.name`, and give it a new key under `panels:` plus a grid slot under `layouts:`. Then re-apply:
 
 ```bash
-sts dashboard apply --context admin -f dashboards/genai-model-cost-efficiency.yaml
+sts dashboard apply --context admin -f charts/suse-observability-genai-dashboards/dashboards/genai-model-cost-efficiency.yaml
 ```
 
 Some ideas that weren't built into these two, but the same metric catalog supports:

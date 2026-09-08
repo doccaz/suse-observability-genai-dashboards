@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-genai-dashboards-files
+  labels:
+    {{- include "genai-dashboards.labels" . | nindent 4 }}
+data:
+  {{- if .Values.dashboards.costEfficiency.enabled }}
+  genai-model-cost-efficiency.yaml: |
+{{ .Files.Get "dashboards/genai-model-cost-efficiency.yaml" | indent 4 }}
+  {{- end }}
+  {{- if .Values.dashboards.gpuSaturation.enabled }}
+  gpu-saturation-vs-llm-load.yaml: |
+{{ .Files.Get "dashboards/gpu-saturation-vs-llm-load.yaml" | indent 4 }}
+  {{- end }}

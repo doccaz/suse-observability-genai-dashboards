@@ -1,0 +1,20 @@
+{{/*
+Tracks the SUSE Observability dashboard id assigned to each dashboard on first apply,
+so `helm upgrade` can update dashboards in place instead of creating duplicates.
+Managed as a plain (non-hook) resource; its data is preserved across upgrades by
+reading back whatever is already on the cluster, since the post-install/post-upgrade
+Job is the only thing that should ever change its contents.
+*/}}
+{{- $existing := lookup "v1" "ConfigMap" .Release.Namespace (include "genai-dashboards.idConfigMapName" .) }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "genai-dashboards.idConfigMapName" . }}
+  labels:
+    {{- include "genai-dashboards.labels" . | nindent 4 }}
+data:
+{{- if and $existing $existing.data }}
+  {{- toYaml $existing.data | nindent 2 }}
+{{- else }}
+  {}
+{{- end }}
