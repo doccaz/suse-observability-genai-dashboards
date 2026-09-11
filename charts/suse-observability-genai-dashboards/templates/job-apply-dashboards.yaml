@@ -21,7 +21,7 @@ spec:
       serviceAccountName: {{ include "genai-dashboards.serviceAccountName" . }}
       containers:
         - name: apply-dashboards
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.Version }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           env:
             - name: STS_CLI_URL
@@ -35,8 +35,6 @@ spec:
             - name: STS_SKIP_SSL
               value: "true"
             {{- end }}
-            - name: STS_CLI_INSTALL_URL
-              value: {{ .Values.stsCliInstallUrl | quote }}
             - name: NAMESPACE
               valueFrom:
                 fieldRef:
@@ -53,11 +51,6 @@ spec:
           args:
             - |
               set -eu
-
-              command -v jq >/dev/null 2>&1 || apk add --no-cache jq >/dev/null
-              command -v sts >/dev/null 2>&1 || {
-                curl -fsSL "$STS_CLI_INSTALL_URL" | bash
-              }
 
               mkdir -p /tmp/dashboards
               apply_one() {

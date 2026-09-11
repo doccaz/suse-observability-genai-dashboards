@@ -26,11 +26,11 @@ dashboards:
 cleanupOnUninstall: false
 
 image:
-  repository: alpine/k8s
-  tag: "1.30.4"
+  repository: ghcr.io/doccaz/suse-observability-genai-dashboards-job
+  # -- Defaults to the chart's own version when unset, so the Job image always matches
+  # the chart release it ships with. Override only to pin a different published image.
+  tag: ""
   pullPolicy: IfNotPresent
-
-stsCliInstallUrl: https://dl.stackstate.com/stackstate-cli/install.sh
 
 job:
   backoffLimit: 2

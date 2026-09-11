@@ -6,7 +6,7 @@ Installs the two GenAI dashboards from this repo into a running [SUSE Observabil
 
 - A SUSE Observability instance reachable from inside the cluster you're installing into (or otherwise reachable over HTTPS from the Job's pod).
 - An admin-scoped **service token** (see the root [README's Authentication section](../README.md#authentication) for how to mint one with `sts service-token create --name dashboard-management --roles stackstate-admin` — a personal API token from the UI also works, but a service token is the credential meant for this kind of unattended automation).
-- The cluster running the Job needs egress to `dl.stackstate.com` (to install the `sts` CLI) and to your SUSE Observability URL.
+- The cluster running the Job needs egress to `ghcr.io` (to pull the Job image) and to your SUSE Observability URL.
 
 ## Install
 
@@ -47,7 +47,7 @@ Installs the two GenAI dashboards from this repo into a running [SUSE Observabil
 | `dashboards.costEfficiency.enabled` | `true` | Apply the GenAI cost/efficiency dashboard |
 | `dashboards.gpuSaturation.enabled` | `true` | Apply the GPU saturation dashboard |
 | `cleanupOnUninstall` | `false` | Run `sts dashboard delete` for tracked dashboards on `helm uninstall` |
-| `image.repository` / `image.tag` | `alpine/k8s` / `1.30.4` | Image used to run the apply/cleanup Jobs (has `kubectl`, `curl`, `jq`; installs `sts` at runtime) |
+| `image.repository` / `image.tag` | `ghcr.io/doccaz/suse-observability-genai-dashboards-job` / `""` | Image used to run the apply/cleanup Jobs (has `kubectl`, `jq`, and `sts` baked in). `tag` defaults to the chart's own version when unset. |
 
 See [`values.yaml`](values.yaml) for the full list.
 
@@ -61,9 +61,17 @@ By default this leaves the dashboards in place in SUSE Observability. Set `clean
 
 ## Limitations
 
-- The apply/cleanup Jobs install the `sts` CLI at runtime from `dl.stackstate.com` rather than baking it into a custom image, to avoid maintaining a separate container image. This means the Job needs network egress at install/upgrade time.
 - Dashboard-id tracking relies on `sts dashboard list -o json` carrying `name`/`id` fields that match by dashboard name; if two dashboards share a name in the same SUSE Observability instance, tracking can pick the wrong one. Don't reuse dashboard names across unrelated installs of this chart into the same instance.
 
 ## For maintainers: publishing a new chart version
 
-`.github/workflows/release-chart.yaml` packages and publishes this chart to the `gh-pages` branch (via [chart-releaser](https://github.com/helm/chart-releaser-action)) whenever `charts/**` changes on `main`, but it silently no-ops if `Chart.yaml`'s `version:` hasn't been bumped (`skip_existing: true`) — bump it on every change meant to ship. The `gh-pages` branch and GitHub Pages itself (Settings → Pages → source: `gh-pages`) need to be set up once, by hand, before `helm repo add` resolves at all.
+`.github/workflows/release.yaml` runs on every push to `main` that touches `charts/**` or `images/dashboards-job/**`, in two sequential jobs:
+
+1. `build-image` builds and pushes the multi-arch (`linux/amd64`/`linux/arm64`) Job image to `ghcr.io/doccaz/suse-observability-genai-dashboards-job`, tagged with `Chart.yaml`'s current `version` (plus `latest` and a `sha-<commit>` tag).
+2. `release-chart` then packages and publishes the chart to the `gh-pages` branch (via [chart-releaser](https://github.com/helm/chart-releaser-action)), but silently no-ops if `version:` hasn't changed (`skip_existing: true`).
+
+Because the Job image's tag defaults to the chart's own version (`image.tag` in `values.yaml`), bumping `Chart.yaml`'s `version` is the only version bookkeeping needed — one bump publishes a matching image and chart release together, in that order.
+
+The very first time this workflow publishes a new image tag, GHCR defaults the package's visibility to **private** — flip it to public by hand (package Settings → Change visibility) or `helm install` will fail with `ImagePullBackOff` for anyone else. Verify with `docker pull ghcr.io/doccaz/suse-observability-genai-dashboards-job:<version>` while logged out.
+
+The `gh-pages` branch and GitHub Pages itself (Settings → Pages → source: `gh-pages`) need to be set up once, by hand, before `helm repo add` resolves at all.
