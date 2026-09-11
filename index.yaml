@@ -3,6 +3,28 @@ entries:
   suse-observability-genai-dashboards:
   - apiVersion: v2
     appVersion: 1.0.0
+    created: "2026-09-11T17:06:25.349175779Z"
+    description: Installs the GenAI cost/efficiency and GPU saturation dashboards
+      into a SUSE Observability instance.
+    digest: 2a96d1f1178d8955976b3d269f81137b420674d89350be7c9eba91de56cfecfa
+    home: https://github.com/doccaz/suse-observability-genai-dashboards
+    keywords:
+    - suse-observability
+    - stackstate
+    - dashboards
+    - genai
+    - observability
+    maintainers:
+    - name: doccaz
+    name: suse-observability-genai-dashboards
+    sources:
+    - https://github.com/doccaz/suse-observability-genai-dashboards
+    type: application
+    urls:
+    - https://github.com/doccaz/suse-observability-genai-dashboards/releases/download/suse-observability-genai-dashboards-0.2.0/suse-observability-genai-dashboards-0.2.0.tgz
+    version: 0.2.0
+  - apiVersion: v2
+    appVersion: 1.0.0
     created: "2026-09-11T15:38:51.18606802Z"
     description: Installs the GenAI cost/efficiency and GPU saturation dashboards
       into a SUSE Observability instance.
@@ -45,4 +67,4 @@ entries:
     urls:
     - https://github.com/doccaz/suse-observability-genai-dashboards/releases/download/suse-observability-genai-dashboards-0.1.0/suse-observability-genai-dashboards-0.1.0.tgz
     version: 0.1.0
-generated: "2026-09-11T15:38:51.186088129Z"
+generated: "2026-09-11T17:06:25.349198091Z"
