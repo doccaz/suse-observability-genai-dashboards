@@ -56,7 +56,7 @@ spec:
 
               command -v jq >/dev/null 2>&1 || apk add --no-cache jq >/dev/null
               command -v sts >/dev/null 2>&1 || {
-                curl -fsSL "$STS_CLI_INSTALL_URL" | sh
+                curl -fsSL "$STS_CLI_INSTALL_URL" | bash
               }
 
               mkdir -p /tmp/dashboards
